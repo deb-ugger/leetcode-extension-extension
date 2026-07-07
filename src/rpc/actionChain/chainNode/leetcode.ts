@@ -467,36 +467,48 @@ server to get the problem's description, test cases, and other information. */
   /* A function that is used to star a problem. */
   starProblem = (problem, starred, cb) => {
     const user = sessionUtils.getUser();
-    const operationName = starred ? "addQuestionToFavorite" : "removeQuestionFromFavorite";
-    const opts = makeOpts(configUtils.sys.urls.graphql);
-    opts.headers.Origin = configUtils.sys.urls.base;
-    opts.headers.Referer = problem.link;
+    const hash = problem.favoriteIdHash || user.hash;
+    const questionId = "" + (problem.favoriteQuestionId || problem.id);
 
-    opts.json = true;
-    opts.body = {
-      query: `mutation ${operationName}($favoriteIdHash: String!, $questionId: String!) {\n  ${operationName}(favoriteIdHash: $favoriteIdHash, questionId: $questionId) {\n    ok\n    error\n    favoriteIdHash\n    questionId\n    __typename\n  }\n}\n`,
-      variables: { favoriteIdHash: user.hash, questionId: "" + problem.id },
-      operationName: operationName,
+    const starWithRest = () => {
+      const deleteUrl = configUtils.sys.urls.favorite_delete
+        .replace(/\$hash/g, hash)
+        .replace(/\$id/g, questionId);
+      const opts = makeOpts(starred ? configUtils.sys.urls.favorites : deleteUrl);
+      opts.headers.Origin = configUtils.sys.urls.base;
+      opts.headers.Referer = configUtils.isCN()
+        ? "https://leetcode.cn/problem-list/"
+        : problem.link || configUtils.sys.urls.base + "/";
+
+      if (starred) {
+        opts.method = "POST";
+        opts.json = true;
+        opts.body = {
+          favorite_id_hash: hash,
+          question_id: questionId,
+        };
+      } else {
+        opts.method = "DELETE";
+      }
+
+      const finishRest = (e: any, resp: any) => {
+        e = checkError(e, resp, 204);
+        if (e) return cb(e);
+        return cb(null, starred);
+      };
+
+      if (configUtils.isCN()) {
+        request(opts, function (e: any, resp: any) {
+          finishRest(e, resp);
+        });
+      } else {
+        request(opts, function (e: any, resp: any) {
+          finishRest(e, resp);
+        });
+      }
     };
 
-    if (configUtils.isCN()) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      request.post(opts, function (e: any, resp: any, _) {
-        e = checkError(e, resp, 200);
-        if (e) return cb(e);
-        return cb(null, starred);
-      });
-    } else {
-
-      opts.json = opts.body
-      delete opts.body
-      this.h2request.post(opts, function (e, resp, _) {
-        e = checkError(e, resp, 200);
-        if (e) return cb(e);
-        return cb(null, starred);
-      });
-
-    }
+    starWithRest();
   };
 
   h2request = {
@@ -540,6 +552,217 @@ server to get the problem's description, test cases, and other information. */
     }
   }
 
+
+  getFavoriteListsGraphQL = (cb) => {
+    const opts = makeOpts(configUtils.sys.urls.graphql);
+    opts.headers.Origin = configUtils.sys.urls.base;
+    opts.headers.Referer = configUtils.isCN()
+      ? "https://leetcode.cn/problem-list/"
+      : configUtils.sys.urls.base;
+    opts.json = true;
+    opts.body = {
+      operationName: "allFavorites",
+      variables: {},
+      query: [
+        "query allFavorites {",
+        "  favoritesLists {",
+        "    allFavorites {",
+        "      idHash",
+        "      name",
+        "      isPublicFavorite",
+        "      questions {",
+        "        questionId",
+        "        titleSlug",
+        "      }",
+        "    }",
+        "  }",
+        "}",
+      ].join("\n"),
+    };
+
+    const handleGraphQLBody = (body, cb) => {
+      if (body?.errors?.length) {
+        return cb(new Error(body.errors.map((item) => item.message).join("; ")));
+      }
+      if (!body?.data?.favoritesLists) {
+        return cb(new Error("Invalid favorites GraphQL response"));
+      }
+      return cb(null, body.data);
+    };
+
+    if (configUtils.isCN()) {
+      request.post(opts, function (e, resp, body) {
+        e = checkError(e, resp, 200);
+        if (e) return cb(e);
+        return handleGraphQLBody(body, cb);
+      });
+    } else {
+      opts.json = opts.body;
+      delete opts.body;
+      this.h2request.post(opts, function (e, resp, body) {
+        e = checkError(e, resp, 200);
+        if (e) return cb(e);
+        return handleGraphQLBody(body, cb);
+      });
+    }
+  };
+
+  getFavoriteQuestionsGraphQL = (favoriteSlug, cb) => {
+    const opts = makeOpts(configUtils.sys.urls.graphql);
+    opts.headers.Origin = configUtils.sys.urls.base;
+    opts.headers.Referer = configUtils.isCN()
+      ? "https://leetcode.cn/problem-list/"
+      : configUtils.sys.urls.base;
+    opts.json = true;
+    opts.body = {
+      operationName: "favoriteQuestionList",
+      variables: { favoriteSlug, limit: 5000 },
+      query: [
+        "query favoriteQuestionList($favoriteSlug: String!, $limit: Int) {",
+        "  favoriteQuestionList(favoriteSlug: $favoriteSlug, limit: $limit) {",
+        "    questions {",
+        "      questionId",
+        "      titleSlug",
+        "    }",
+        "  }",
+        "}",
+      ].join("\n"),
+    };
+
+    const handleGraphQLBody = (body, cb) => {
+      if (body?.errors?.length) {
+        return cb(new Error(body.errors.map((item) => item.message).join("; ")));
+      }
+      if (!body?.data?.favoriteQuestionList) {
+        return cb(new Error("Invalid favoriteQuestionList GraphQL response"));
+      }
+      return cb(null, body.data);
+    };
+
+    if (configUtils.isCN()) {
+      request.post(opts, function (e, resp, body) {
+        e = checkError(e, resp, 200);
+        if (e) return cb(e);
+        return handleGraphQLBody(body, cb);
+      });
+    } else {
+      opts.json = opts.body;
+      delete opts.body;
+      this.h2request.post(opts, function (e, resp, body) {
+        e = checkError(e, resp, 200);
+        if (e) return cb(e);
+        return handleGraphQLBody(body, cb);
+      });
+    }
+  };
+
+  getFavoriteQuestionsREST = (favoriteHash, cb) => {
+    const url = configUtils.sys.urls.favorites.replace(/\/$/, "") + "/" + favoriteHash + "/";
+    const opts = makeOpts(url);
+    opts.headers.Referer = configUtils.isCN()
+      ? "https://leetcode.cn/problem-list/"
+      : configUtils.sys.urls.base;
+
+    if (!configUtils.isCN()) {
+      this.h2request.get(opts, function (e, resp, data) {
+        e = checkError(e, resp, 200);
+        if (e) return cb(e);
+        const questions = data?.questions || [];
+        return cb(null, {
+          favoriteQuestionList: {
+            questions: questions.map((item) => ({
+              questionId: `${item?.question_id || item?.frontend_question_id || ""}`,
+              titleSlug: item?.title_slug || item?.slug || "",
+            })),
+          },
+        });
+      });
+    } else {
+      request.get(opts, function (e, resp, body) {
+        e = checkError(e, resp, 200);
+        if (e) return cb(e);
+        let data;
+        try {
+          data = typeof body === "string" ? JSON.parse(body) : body;
+        } catch (parseError) {
+          return cb(parseError);
+        }
+        const questions = data?.questions || [];
+        return cb(null, {
+          favoriteQuestionList: {
+            questions: questions.map((item) => ({
+              questionId: `${item?.question_id || item?.frontend_question_id || ""}`,
+              titleSlug: item?.title_slug || item?.slug || "",
+            })),
+          },
+        });
+      });
+    }
+  };
+
+  fetchFavoriteQuestionsData = (favoriteSlug, favoriteHash, cb) => {
+    const that = this;
+    const tryGraphQL = (slug, next) => {
+      this.getFavoriteQuestionsGraphQL(slug, function (e, result) {
+        if (!e && result?.favoriteQuestionList) {
+          return cb(null, result);
+        }
+        next(e);
+      });
+    };
+
+    tryGraphQL(favoriteSlug, function (e1) {
+      if (favoriteHash && favoriteHash !== favoriteSlug) {
+        tryGraphQL(favoriteHash, function (e2) {
+          that.getFavoriteQuestionsREST(favoriteHash, function (e3, restResult) {
+            if (e3) return cb(e3 || e2 || e1);
+            return cb(null, restResult);
+          });
+        });
+      } else {
+        that.getFavoriteQuestionsREST(favoriteHash || favoriteSlug, function (e3, restResult) {
+          if (e3) return cb(e3 || e1);
+          return cb(null, restResult);
+        });
+      }
+    });
+  };
+
+  getFavoriteListsFromREST = (cb) => {
+    this.getFavorites(function (e, favorites) {
+      if (e) return cb(e);
+      const privateFavorites = favorites?.favorites?.private_favorites || [];
+      const allFavorites = privateFavorites
+        .filter((item) => item?.id_hash && item?.name)
+        .map((item) => ({
+          idHash: item.id_hash,
+          slug: item.slug || item.id_hash,
+          name: item.name,
+          questions: [],
+        }));
+      return cb(null, { favoritesLists: { allFavorites } });
+    });
+  };
+
+  fetchFavoriteListsData = (cb) => {
+    const that = this;
+    this.getFavoriteListsGraphQL(function (e, result) {
+      const all = result?.favoritesLists?.allFavorites || [];
+      if (!e && all.length > 0) {
+        return cb(null, result);
+      }
+      that.getFavoriteListsFromREST(function (e2, restResult) {
+        if (e2) {
+          return cb(e || e2);
+        }
+        return cb(null, restResult);
+      });
+    });
+  };
+
+  getFavoriteQuestions = (favoriteSlug, favoriteHash, cb) => {
+    this.fetchFavoriteQuestionsData(favoriteSlug, favoriteHash, cb);
+  };
 
   /* Making a request to the server to get the favorites. */
   getFavorites = (cb: any) => {
@@ -956,7 +1179,7 @@ and csrf token to the user object and saves the user object to the session. */
   getQuestionOfToday = (cb) => {
     const opts = makeOpts(configUtils.sys.urls.graphql);
     opts.headers.Origin = configUtils.sys.urls.base;
-    opts.headers.Referer = "https://leetcode.com/";
+    opts.headers.Referer = configUtils.sys.urls.base + "/";
 
     opts.json = true;
     opts.body = {
@@ -971,15 +1194,6 @@ and csrf token to the user object and saves the user object to the session. */
         "      titleSlug",
         "      questionId",
         "      questionFrontendId",
-        // '      content',
-        // '      stats',
-        // '      likes',
-        // '      dislikes',
-        // '      codeDefinition',
-        // '      sampleTestCase',
-        // '      enableRunCode',
-        // '      metaData',
-        // '      translatedContent',
         "      __typename",
         "    }",
         "  __typename",
@@ -988,18 +1202,25 @@ and csrf token to the user object and saves the user object to the session. */
       ].join("\n"),
     };
 
-    // request.post(opts, function (e, resp, body) {
-    //   e = checkError(e, resp, 200);
-    //   if (e) return cb(e);
-    //   let result: any = {};
-    //   result.titleSlug = body.data.todayRecord[0].question.titleSlug;
-    //   result.questionId = body.data.todayRecord[0].question.questionId;
-    //   result.fid = body.data.todayRecord[0].question.questionFrontendId;
-    //   result.date = body.data.todayRecord[0].data;
-    //   result.userStatus = body.data.todayRecord[0].userStatus;
-    //   return cb(null, result);
-    // });
-    cb(null, {});
+    if (configUtils.isCN()) {
+      return cb(new Error("today question handler missing"));
+    }
+
+    this.h2request.post(opts, function (e, resp, body) {
+      e = checkError(e, resp, 200);
+      if (e) return cb(e);
+      const record = body?.data?.todayRecord?.[0];
+      if (!record?.question) {
+        return cb(new Error("today question not available"));
+      }
+      let result: any = {};
+      result.titleSlug = record.question.titleSlug;
+      result.questionId = record.question.questionId;
+      result.fid = record.question.questionFrontendId;
+      result.date = record.date;
+      result.userStatus = record.userStatus;
+      return cb(null, result);
+    });
   };
 
 

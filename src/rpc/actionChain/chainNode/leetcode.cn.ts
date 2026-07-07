@@ -127,12 +127,16 @@ class LeetCodeCn extends ChainNodeBase {
     request.post(opts, function (e, resp, body) {
     e = checkError(e, resp, 200);
       if (e) return cb(e);
+      const record = body?.data?.todayRecord?.[0];
+      if (!record?.question) {
+        return cb(new Error("today question not available"));
+      }
       let result: any = {};
-      result.titleSlug = body.data.todayRecord[0].question.titleSlug;
-      result.questionId = body.data.todayRecord[0].question.questionId;
-      result.fid = body.data.todayRecord[0].question.questionFrontendId;
-      result.date = body.data.todayRecord[0].data;
-      result.userStatus = body.data.todayRecord[0].userStatus;
+      result.titleSlug = record.question.titleSlug;
+      result.questionId = record.question.questionId;
+      result.fid = record.question.questionFrontendId;
+      result.date = record.date;
+      result.userStatus = record.userStatus;
       return cb(null, result);
     });
   };

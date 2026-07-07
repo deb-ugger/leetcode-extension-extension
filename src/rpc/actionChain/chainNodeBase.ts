@@ -105,7 +105,10 @@ export class ChainNodeBase {
     this.next.getProblem(keyword, needTranslation, cb);
   }
 
-  public starProblem(problem, starred, cb: Function): void {
+  public starProblem(problem, starred, cb: Function, favoriteIdHash?: string): void {
+    if (favoriteIdHash) {
+      problem.favoriteIdHash = favoriteIdHash;
+    }
     this.next.starProblem(problem, starred, cb);
   }
   public exportProblem(problem, opts): void {
@@ -139,5 +142,13 @@ export class ChainNodeBase {
   }
   public getHintsOnline(problem, cb: Function): void {
     this.next.getHintsOnline(problem, cb);
+  }
+
+  public getFavoriteLists(cb: Function): void {
+    this.next.getFavoriteLists(cb);
+  }
+
+  public getFavoriteQuestions(favoriteSlug: string, favoriteHash: string, cb: Function): void {
+    this.next.getFavoriteQuestions(favoriteSlug, favoriteHash, cb);
   }
 }

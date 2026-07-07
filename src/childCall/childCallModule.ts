@@ -308,6 +308,25 @@ class ExecuteService implements Disposable {
     return solution;
   }
 
+  public async getFavoriteLists(): Promise<string> {
+    const cmd: string[] = [await this.getLeetCodeBinaryPath(), "query", "-k"];
+    const solution: string = await this.callWithMsg("正在获取收藏夹~", this.nodeExecutable, cmd);
+    return solution;
+  }
+
+  public async getFavoriteQuestions(favoriteSlug: string, favoriteHash: string): Promise<string> {
+    const cmd: string[] = [
+      await this.getLeetCodeBinaryPath(),
+      "query",
+      "-l",
+      favoriteSlug,
+      "-m",
+      favoriteHash,
+    ];
+    const solution: string = await this.callWithMsg("正在获取收藏夹题目~", this.nodeExecutable, cmd);
+    return solution;
+  }
+
   public async getDescription(problemNodeId: string, needTranslation: boolean): Promise<string> {
     const cmd: string[] = [await this.getLeetCodeBinaryPath(), "show", problemNodeId, "-x"];
     if (!needTranslation) {
@@ -407,12 +426,51 @@ class ExecuteService implements Disposable {
     }
   }
 
-  public async toggleFavorite(node: TreeNodeModel, addToFavorite: boolean): Promise<void> {
-    const commandParams: string[] = [await this.getLeetCodeBinaryPath(), "star", node.qid];
+  public async toggleFavorite(
+    node: TreeNodeModel,
+    addToFavorite: boolean,
+    favoriteHash?: string
+  ): Promise<void> {
+    const nodeData = node.get_data?.() || (node as any).__DataPool?.get?.(node.nodeType) || {};
+    const keyword = nodeData.favoriteQuestionId || node.qid || node.id;
+    const commandParams: string[] = [await this.getLeetCodeBinaryPath(), "star", keyword];
     if (!addToFavorite) {
       commandParams.push("-d");
     }
-    await this.callWithMsg("正在更新收藏列表~", this.nodeExecutable, commandParams);
+    const hash = favoriteHash || node.input || nodeData.input;
+    if (hash) {
+      commandParams.push("-H", hash);
+    }
+    const result = await this.callWithMsg("正在更新收藏列表~", this.nodeExecutable, commandParams);
+    this.assertStarCommandResult(result);
+  }
+
+  private assertStarCommandResult(result: string): void {
+    const trimmed = (result || "").trim();
+    if (!trimmed) {
+      throw new Error("favorite command returned empty response");
+    }
+    const successLine =
+      trimmed
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.includes("icon.like") || line.includes("icon.unlike")) || trimmed;
+    if (successLine.includes("[object Object]")) {
+      throw new Error("favorite command failed");
+    }
+    if (successLine.startsWith("{")) {
+      const parsed = JSON.parse(successLine);
+      if (parsed?.error) {
+        throw new Error(parsed.error);
+      }
+      return;
+    }
+    if (successLine.startsWith("[error]")) {
+      throw new Error(successLine);
+    }
+    if (!successLine.includes("icon.like") && !successLine.includes("icon.unlike")) {
+      throw new Error(successLine);
+    }
   }
 
   public async trySignIn(loginMethod: string) {

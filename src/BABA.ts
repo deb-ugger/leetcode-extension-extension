@@ -140,6 +140,10 @@ export enum BabaStr {
   RecentContestMediator = "RecentContestMediator",
   ContestQuestionProxy = "ContestQuestionProxy",
   ContestQuestionMediator = "ContestQuestionMediator",
+  FavoriteDataProxy = "FavoriteDataProxy",
+  FavoriteDataMediator = "FavoriteDataMediator",
+  TreeData_searchFavoriteListsFinish = "TreeData_searchFavoriteListsFinish",
+  TreeData_searchFavoriteQuestionsFinish = "TreeData_searchFavoriteQuestionsFinish",
 }
 
 export class BABA {

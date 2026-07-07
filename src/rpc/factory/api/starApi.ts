@@ -13,6 +13,22 @@ import { sessionUtils } from "../../utils/sessionUtils";
 import { ApiBase } from "../apiBase";
 import { chainMgr } from "../../actionChain/chainManager";
 
+function formatError(e: any): string {
+  if (!e) {
+    return "unknown error";
+  }
+  if (typeof e === "string") {
+    return e;
+  }
+  if (e instanceof Error) {
+    return e.message;
+  }
+  if (e.msg) {
+    return e.statusCode ? `${e.msg} [code=${e.statusCode}]` : e.msg;
+  }
+  return String(e);
+}
+
 class StarApi extends ApiBase {
   constructor() {
     super();
@@ -25,6 +41,12 @@ class StarApi extends ApiBase {
         type: "boolean",
         describe: "Unstar question",
         default: false,
+      })
+      .option("H", {
+        alias: "favoriteHash",
+        type: "string",
+        default: "",
+        describe: "Target favorite list hash",
       })
       .positional("keyword", {
         type: "string",
@@ -39,15 +61,55 @@ class StarApi extends ApiBase {
 
   call(argv) {
     sessionUtils.argv = argv;
-    // translation doesn't affect question lookup
-    chainMgr.getChainHead().getProblem(argv.keyword, true, function (e, problem) {
-      if (e) return reply.info(e);
+    const favoriteHash = argv.H || argv.favoriteHash || "";
+    const replyError = (e: any): never => {
+      reply.info(JSON.stringify({ error: formatError(e) }));
+      process.exit(1);
+    };
 
-      chainMgr.getChainHead().starProblem(problem, !argv.delete, function (e, flag) {
-        if (e) return reply.info(e);
-        chainMgr.getChainHead().updateProblem(problem, { starred: flag });
-        reply.info(`[${problem.fid}] ${problem.name} ${flag ? "icon.like" : "icon.unlike"}`);
-      });
+    chainMgr.getChainHead().getProblems(false, function (e, problems) {
+      if (e) return replyError(e);
+
+      const keyword = argv.keyword;
+      const normalized = Number(keyword) || keyword;
+      let problem;
+      if (favoriteHash) {
+        // Favorite list GraphQL questionId is backend question_id; avoid fid-only collisions.
+        problem = problems.find(function (x) {
+          return x.id + "" === normalized + "";
+        });
+        if (!problem) {
+          problem = {
+            id: normalized,
+            fid: normalized,
+            name: keyword,
+            favoriteIdHash: favoriteHash,
+            favoriteQuestionId: normalized,
+          };
+        } else {
+          problem.favoriteIdHash = favoriteHash;
+          problem.favoriteQuestionId = normalized;
+        }
+      } else {
+        problem = problems.find(function (x) {
+          return x.id + "" === normalized + "" || x.fid + "" === normalized + "";
+        });
+      }
+      if (!problem) {
+        return replyError(new Error(`Problem not found: ${keyword}`));
+      }
+
+      chainMgr.getChainHead().starProblem(
+        problem,
+        !argv.delete,
+        function (e, flag) {
+          if (e) return replyError(e);
+          chainMgr.getChainHead().updateProblem(problem, { starred: flag });
+          reply.info(`[${problem.fid}] ${problem.name} ${flag ? "icon.like" : "icon.unlike"}`);
+          process.exit(0);
+        }
+      );
+      return;
     });
   }
 }

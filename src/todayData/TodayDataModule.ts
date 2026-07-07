@@ -86,6 +86,9 @@ export class TodayDataProxy extends BABAProxy {
         .get_instance()
         .getTodayQuestion(needTranslation);
       const query_result = JSON.parse(solution);
+      if (query_result?.error) {
+        throw new Error(query_result.error);
+      }
       // "{\"titleSlug\":\"number-of-dice-rolls-with-target-sum\",\"questionId\":\"1263\",\"fid\":\"1155\",\"userStatus\":\"NOT_START\"}\n"
 
       // const titleSlug: string = query_result.titleSlug

@@ -73,6 +73,16 @@ class TreeViewController implements Disposable {
   private waitTodayQuestion: boolean;
   private waitUserContest: boolean;
   private configurationChangeListener: Disposable;
+  private favoriteOpQueue: Promise<void> = Promise.resolve();
+
+  private enqueueFavoriteOp<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.favoriteOpQueue.then(op, op);
+    this.favoriteOpQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
 
   constructor() {
     this.configurationChangeListener = workspace.onDidChangeConfiguration((event: ConfigurationChangeEvent) => {
@@ -412,11 +422,27 @@ class TreeViewController implements Disposable {
    * It adds a node to the user's favorites
    * @param {TreeNodeModel} node - TreeNodeModel
    */
-  public async addFavorite(node: TreeNodeModel): Promise<void> {
-    try {
-      await BABA.getProxy(BabaStr.ChildCallProxy).get_instance().toggleFavorite(node, true);
+  public addFavorite(node: TreeNodeModel): Promise<void> {
+    return this.enqueueFavoriteOp(() => this.doAddFavorite(node));
+  }
 
-      BABA.sendNotification(BabaStr.TreeData_favoriteChange);
+  private async doAddFavorite(node: TreeNodeModel): Promise<void> {
+    try {
+      const nodeData = node.get_data();
+      const questionId = nodeData?.favoriteQuestionId || node.qid || node.id;
+      const favoriteHash =
+        node.input ||
+        nodeData?.input ||
+        BABA.getProxy(BabaStr.FavoriteDataProxy).findFavoriteHashForQuestion(questionId);
+      await BABA.getProxy(BabaStr.ChildCallProxy)
+        .get_instance()
+        .toggleFavorite(node, true, favoriteHash);
+      if (favoriteHash) {
+        BABA.getProxy(BabaStr.FavoriteDataProxy).addQuestionToList(favoriteHash, questionId);
+        BABA.getProxy(BabaStr.FavoriteDataProxy).refreshFavoriteQuestionsUI(favoriteHash);
+      } else {
+        BABA.sendNotification(BabaStr.TreeData_favoriteChange);
+      }
     } catch (error) {
       await ShowMessage("添加喜欢题目失败. 请查看控制台信息~", OutPutType.error);
     }
@@ -426,10 +452,29 @@ class TreeViewController implements Disposable {
    * It removes a node from the user's favorites
    * @param {TreeNodeModel} node - The node that is currently selected in the tree.
    */
-  public async removeFavorite(node: TreeNodeModel): Promise<void> {
+  public removeFavorite(node: TreeNodeModel): Promise<void> {
+    return this.enqueueFavoriteOp(() => this.doRemoveFavorite(node));
+  }
+
+  private async doRemoveFavorite(node: TreeNodeModel): Promise<void> {
     try {
-      await BABA.getProxy(BabaStr.ChildCallProxy).get_instance().toggleFavorite(node, false);
-      BABA.sendNotification(BabaStr.TreeData_favoriteChange);
+      const nodeData = node.get_data();
+      const questionId = nodeData?.favoriteQuestionId || node.qid || node.id;
+      const fid = node.id;
+      const favoriteHash =
+        node.input ||
+        nodeData?.input ||
+        BABA.getProxy(BabaStr.FavoriteDataProxy).findFavoriteHashForQuestion(questionId);
+      const favoriteProxy = BABA.getProxy(BabaStr.FavoriteDataProxy);
+      await BABA.getProxy(BabaStr.ChildCallProxy)
+        .get_instance()
+        .toggleFavorite(node, false, favoriteHash);
+      if (favoriteHash) {
+        favoriteProxy.removeQuestionFromList(favoriteHash, questionId, fid);
+        favoriteProxy.refreshFavoriteQuestionsUI(favoriteHash);
+      } else {
+        BABA.sendNotification(BabaStr.TreeData_favoriteChange);
+      }
     } catch (error) {
       await ShowMessage("移除喜欢题目失败. 请查看控制台信息~", OutPutType.error);
     }
@@ -1344,6 +1389,43 @@ class TreeViewController implements Disposable {
     }
     this.sortSubCategoryNodes(res, Category.Tag);
     return res;
+  }
+
+  public getFavoriteListChild(): TreeNodeModel[] {
+    const favoriteProxy = BABA.getProxy(BabaStr.FavoriteDataProxy);
+    if (!favoriteProxy.isListsLoaded()) {
+      if (!favoriteProxy.isLoadingLists()) {
+        favoriteProxy.searchFavoriteLists();
+      }
+      return [];
+    }
+    const lists = favoriteProxy.getAllFavoriteListTreeNodes();
+    const res: TreeNodeModel[] = [];
+    for (const list of lists) {
+      res.push(CreateTreeNodeModel(list, TreeNodeType.Tree_favorite_fenlei));
+    }
+    return res;
+  }
+
+  public getFavoriteQuestionNodes(element: TreeNodeModel): TreeNodeModel[] {
+    const favoriteProxy = BABA.getProxy(BabaStr.FavoriteDataProxy);
+    const hash = element.id;
+    if (!favoriteProxy.isListsLoaded() || !favoriteProxy.isQuestionsLoaded(hash)) {
+      return [];
+    }
+    const res: TreeNodeModel[] = [];
+    const questionDataProxy = BABA.getProxy(BabaStr.QuestionDataProxy);
+    for (const qid of favoriteProxy.getFavoriteQuestionQids(hash)) {
+      let questionNode: TreeNodeModel | undefined = questionDataProxy.getNodeByQid(qid);
+      if (questionNode == undefined) {
+        questionNode = questionDataProxy.getNodeById(qid);
+      }
+      if (questionNode != undefined && this.canShow(questionNode)) {
+        const leafData = { ...questionNode.get_data(), input: hash, favoriteQuestionId: qid };
+        res.push(CreateTreeNodeModel(leafData, TreeNodeType.Tree_favorite_leaf));
+      }
+    }
+    return sortNodeList(res);
   }
 
   public getFavoriteNodes(): TreeNodeModel[] {

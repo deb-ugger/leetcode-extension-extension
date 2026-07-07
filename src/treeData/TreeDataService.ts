@@ -120,7 +120,10 @@ export class TreeDataService implements vscode.TreeDataProvider<TreeNodeModel> {
         return treeViewController.getAllNodes();
       }
       else if (element.nodeType == TreeNodeType.Tree_favorite) {
-        return treeViewController.getFavoriteNodes();
+        return treeViewController.getFavoriteListChild();
+      }
+      else if (element.nodeType == TreeNodeType.Tree_favorite_fenlei) {
+        return treeViewController.getFavoriteQuestionNodes(element);
       }
       else if (element.nodeType == TreeNodeType.Tree_difficulty) {
         return treeViewController.getDifficultyChild()
@@ -412,6 +415,8 @@ export class TreeDataMediator extends BABAMediator {
       BabaStr.ConfigChange_hideScore,
       BabaStr.ConfigChange_SortStrategy,
       BabaStr.TreeData_favoriteChange,
+      BabaStr.TreeData_searchFavoriteListsFinish,
+      BabaStr.TreeData_searchFavoriteQuestionsFinish,
       BabaStr.USER_statusChanged,
       BabaStr.statusBar_update_statusFinish,
       BabaStr.StartReadData,
@@ -501,7 +506,11 @@ export class TreeDataMediator extends BABAMediator {
         break;
       case BabaStr.TreeData_searchUserContestFinish:
       case BabaStr.TreeData_favoriteChange:
-        treeDataService.refresh();
+        treeDataService.fire();
+        break;
+      case BabaStr.TreeData_searchFavoriteListsFinish:
+      case BabaStr.TreeData_searchFavoriteQuestionsFinish:
+        treeDataService.fire();
         break;
       case BabaStr.QuestionData_ReBuildQuestionDataFinish:
       case BabaStr.TreeData_searchTodayFinish:

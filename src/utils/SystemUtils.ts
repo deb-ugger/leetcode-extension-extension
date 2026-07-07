@@ -185,6 +185,25 @@ export async function sysCall(
 ): Promise<string> {
   return new Promise((resolve: (res: string) => void, reject: (e: Error) => void): void => {
     let result: string = "";
+    let settled = false;
+    const finishResolve = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      try {
+        childProc.kill();
+      } catch (_e) {
+        // ignore kill errors when process already exited
+      }
+      resolve(result);
+    };
+    const tryResolveStarSuccess = () => {
+      if (!result.includes("icon.like") && !result.includes("icon.unlike")) {
+        return;
+      }
+      finishResolve();
+    };
     let childProc: cp.ChildProcess;
     if (useVscodeNode() && command == "node") {
       let newargs: string[] = [];
@@ -192,7 +211,7 @@ export async function sysCall(
       for (let arg_index = 1; arg_index < args.length; arg_index++) {
         newargs.push(args[arg_index]);
       }
-      let new_opt = { silent: true, ...options, env: createEnvOption() };
+      let new_opt = { silent: true, execArgv: [], ...options, env: createEnvOption() };
       childProc = cp.fork(command, newargs, new_opt);
     } else {
       childProc = cp.spawn(command, args, {
@@ -205,6 +224,7 @@ export async function sysCall(
       data = data.toString();
       result = result.concat(data);
       BABA.getProxy(BabaStr.LogOutputProxy).get_log().append(data);
+      tryResolveStarSuccess();
     });
 
     childProc.stderr?.on("data", (data: string | Buffer) =>
@@ -214,16 +234,41 @@ export async function sysCall(
     childProc.on("error", reject);
 
     childProc.on("close", (code: number) => {
+      if (settled) {
+        return;
+      }
       let try_result_json;
       try {
-        try_result_json = JSON.parse(result);
+        try_result_json = JSON.parse(result.trim());
       } catch (e) {
         try_result_json;
       }
-      if (code !== 0 || (try_result_json ? try_result_json.code < 0 : result.indexOf("ERROR") > -1)) {
+      const hasHardError =
+        code !== 0 || (try_result_json ? try_result_json.code < 0 : result.indexOf("ERROR") > -1);
+      if (hasHardError) {
+        if (result.includes("icon.like") || result.includes("icon.unlike")) {
+          resolve(result);
+          return;
+        }
+        if (try_result_json?.error) {
+          reject(new Error(try_result_json.error));
+          return;
+        }
+        if (result.includes("[object Object]")) {
+          reject(new Error("command failed"));
+          return;
+        }
+        if (code !== 0 && result.trim().length > 0 && try_result_json && !try_result_json.error) {
+          resolve(result);
+          return;
+        }
         const error = new Error(`exit code "${code}". ${result || ""}`);
         reject(error);
       } else {
+        if (try_result_json?.error) {
+          reject(new Error(try_result_json.error));
+          return;
+        }
         resolve(result);
       }
     });
@@ -242,6 +287,15 @@ function childLCPTCTX(): string {
 export function createEnvOption(): {} {
   const proxy: string | undefined = getHttpAgent();
   const env: any = Object.create(process.env);
+  const nodeOptions = `${env.NODE_OPTIONS || ""}`
+    .replace(/--inspect(?:-port|-brk)?(?:=[^\s]+)?/g, "")
+    .replace(/--debug(?:-port|-brk)?(?:=[^\s]+)?/g, "")
+    .trim();
+  if (nodeOptions) {
+    env.NODE_OPTIONS = nodeOptions;
+  } else {
+    delete env.NODE_OPTIONS;
+  }
   if (proxy) {
     env.http_proxy = proxy;
     return env;

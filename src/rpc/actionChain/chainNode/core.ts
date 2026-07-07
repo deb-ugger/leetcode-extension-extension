@@ -73,8 +73,12 @@ class CorePlugin extends ChainNodeBase {
   };
 
   /* It's a method that stars the problem. */
-  starProblem = (problem, starred, cb) => {
-    if (problem.starred === starred) {
+  starProblem = (problem, starred, cb, favoriteIdHash?) => {
+    if (favoriteIdHash) {
+      problem.favoriteIdHash = favoriteIdHash;
+    }
+    const targetHash = problem.favoriteIdHash;
+    if (problem.starred === starred && !targetHash) {
       return cb(null, starred);
     }
 
@@ -132,6 +136,21 @@ class CorePlugin extends ChainNodeBase {
       return cb(null, result);
     });
   };
+
+  getFavoriteLists = (cb) => {
+    (this as any).fetchFavoriteListsData(function (e, result) {
+      if (e) return cb(e);
+      return cb(null, result);
+    });
+  };
+
+  getFavoriteQuestions = (favoriteSlug, favoriteHash, cb) => {
+    (this as any).fetchFavoriteQuestionsData(favoriteSlug, favoriteHash, function (e, result) {
+      if (e) return cb(e);
+      return cb(null, result);
+    });
+  };
+
   getRating = (cb) => {
     this.getRatingOnline(function (e, result) {
       if (e) return cb(e);

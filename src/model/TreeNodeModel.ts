@@ -49,6 +49,8 @@ export interface IQuestionData {
   difficulty: string;
   passRate: string;
   companies: string[];
+  input?: string;
+  favoriteQuestionId?: string;
 }
 
 // 今天搬砖的点
@@ -112,6 +114,7 @@ export enum TreeNodeType {
   Tree_tag_fenlei_leaf = 10411, // tag
 
   Tree_favorite = 10500, // favorite
+  Tree_favorite_fenlei = 10510, // favorite list
   Tree_favorite_leaf = 10511, // 题目
 
   Tree_choice = 10600, // choice

@@ -86,6 +86,24 @@ class QueryApi extends ApiBase {
         default: false,
         describe: "get Question list of a contest",
       })
+      .option("k", {
+        alias: "getFavoriteLists",
+        type: "boolean",
+        default: false,
+        describe: "getFavoriteLists",
+      })
+      .option("l", {
+        alias: "getFavoriteQuestions",
+        type: "string",
+        default: "",
+        describe: "getFavoriteQuestions slug",
+      })
+      .option("m", {
+        alias: "favoriteHash",
+        type: "string",
+        default: "",
+        describe: "favorite list hash for REST fallback",
+      })
       .option("z", {
         alias: "test",
         type: "string",
@@ -103,9 +121,14 @@ class QueryApi extends ApiBase {
 
   call(argv) {
     sessionUtils.argv = argv;
+    const replyError = (e: any) => {
+      const message = e?.msg || e?.message || String(e);
+      const statusCode = e?.statusCode;
+      reply.info(JSON.stringify(statusCode ? { error: message, statusCode } : { error: message }));
+    };
     if (argv.a) {
       chainMgr.getChainHead().getTodayQuestion(function (e, result) {
-        if (e) return;
+        if (e) return replyError(e);
         reply.info(JSON.stringify(result));
       });
     } else if (argv.b) {
@@ -135,7 +158,7 @@ class QueryApi extends ApiBase {
       });
     } else if (argv.d) {
       chainMgr.getChainHead().filterProblems(argv, function (e, problems) {
-        if (e) return reply.info(e);
+        if (e) return replyError(e);
         let new_objcet: Array<any> = [];
         problems.forEach((element) => {
           let temp_ele: any = {};
@@ -167,14 +190,25 @@ class QueryApi extends ApiBase {
           });
         });
       }
-    } if (argv.i) {
+    } else if (argv.i) {
       chainMgr.getChainHead().getRecentContest(function (e, result) {
-        if (e) return;
+        if (e) return replyError(e);
         reply.info(JSON.stringify(result));
       });
-    } if (argv.j) {
+    } else if (argv.j) {
       chainMgr.getChainHead().getContestQuestion(argv.j, function (e, result) {
-        if (e) return;
+        if (e) return replyError(e);
+        reply.info(JSON.stringify(result));
+      });
+    } else if (argv.k) {
+      chainMgr.getChainHead().getFavoriteLists(function (e, result) {
+        if (e) return replyError(e);
+        reply.info(JSON.stringify(result));
+      });
+    } else if (argv.l) {
+      const favoriteHash = argv.m || argv.l;
+      chainMgr.getChainHead().getFavoriteQuestions(argv.l, favoriteHash, function (e, result) {
+        if (e) return replyError(e);
         reply.info(JSON.stringify(result));
       });
     } else if (argv.z) {
